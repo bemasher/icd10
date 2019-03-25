@@ -139,7 +139,8 @@ func TabularQuery(qry string) (diags []util.Diag, err error) {
 }
 
 type QueryResults struct {
-	Query string
+	Query   string
+	Stemmed string
 
 	Alphabetic []util.Term
 	Tabular    []util.Diag
@@ -166,7 +167,8 @@ func (IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wg.Add(2)
 
 	results := QueryResults{
-		Query: terms,
+		Query:   terms,
+		Stemmed: strings.Join(util.Tokenize(terms), " "),
 	}
 
 	go func() {
