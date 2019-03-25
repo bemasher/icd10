@@ -360,9 +360,6 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", Logger()(Gzip(IndexHandler{})))
-	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, req *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
 	mux.Handle("/assets/", Gzip(http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))))
 
 	if *production {
