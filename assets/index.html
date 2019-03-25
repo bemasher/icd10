@@ -36,115 +36,130 @@
 
 <body>
 	<!-- Search Bar -->
-	<div class="container col-6">
-		<form action="/" method="GET">
-			<div class="input-group">
-				<input type="text" class="form-control" placeholder="Query" name="q" value="{{ .Query }}">
-				<div class="input-group-append">
-					<button class="btn btn-primary" type="submit">Search</button>
-				</div>
-			</div>
-		</form>
+	<div class="container-fluid">
+		<div class="row justify-content-center">
+			<div class="col-xl-6">
+				<form action="/" method="GET">
+					<div class="input-group">
+						<input type="text" class="form-control" placeholder="Query" name="q" value="{{ .Query }}">
+						<div class="input-group-append">
+							<button class="btn btn-primary" type="submit">Search</button>
+						</div>
+					</div>
+				</form>
 
-		{{ range .Errors }}
-		{{ if . }}
-		<div class="alert alert-danger alert-margin" role="alert">
-			<pre>{{ printf "%+v" . }}</pre>
+				{{ range .Errors }}
+				{{ if . }}
+				<div class="alert alert-danger alert-margin" role="alert">
+					<pre>{{ printf "%+v" . }}</pre>
+				</div>
+				{{ end }}
+				{{ end }}
+			</div>
 		</div>
-		{{ end }}
-		{{ end }}
 	</div>
 
-	<!-- Alphabetic Index -->
-	<div class="clearfix">
-		<div class="container col-6 float-left result-list">
-			<h3 class="list-group-title">Alphabetic Index</h3>
-			<ul class="list-group-flush accordion" id="alphabetic-index">
-				{{ range $index, $term := .Alphabetic }}
-				<li class="list-group-item list-group-item-action">
-					<b data-toggle="collapse" data-target=".term-{{ $index }}">
-						<a class="code" href="/?q={{ .Code }}">{{ codeTrim .Code }}</a>
-						{{ .Title }} {{ .Nemod }}
-						{{ if .Manif }}
-						<span class="code">[<a href="/?q={{ codeTrim .Manif }}">{{ .Manif }}</a>]</span>
-						{{ end }}
-					</b>
-					<!-- Badges -->
-					<div class="float-right clearfix">
-						{{ range .Attrs }}
-						<span class="badge badge-primary">{{ badge .Attr }}</span>
-						{{ end }}
-					</div>
+	<div class="container-fluid">
+		<div class="row">
+			<!-- Alphabetic Index -->
+			<div class="col-xl-6">
+				<h3 class="list-group-title">Alphabetic Index</h3>
+				<ul class="list-group-flush accordion" id="alphabetic-index">
+					{{ range $index, $term := .Alphabetic }}
+					<li class="list-group-item list-group-item-action">
+						<div class="row">
+							<div class="col-auto mr-auto">
+								<b><a class="code" href="/?q={{ .Code }}">{{ codeTrim .Code }}</a></b>
+								<b data-toggle="collapse" data-target=".term-{{ $index }}">
+									{{ .Title }} {{ .Nemod }}
+									{{ if .Manif }}
+									<span class="code">[<a href="/?q={{ codeTrim .Manif }}">{{ .Manif }}</a>]</span>
+									{{ end }}
+								</b>
+							</div>
 
-					<div class="list-group-item-body collapse term-{{ $index }} {{ if $index }}{{ else }}show{{ end }}"
-						id="term-{{ $index }}" data-parent="#alphabetic-index">
-						{{ range .Attrs }}
-						{{ if label .Attr }}
-						<div>{{ label .Attr }}<a href="/?q={{ .Value }}">{{ .Value }}</a></div>
-						{{ end }}
-						{{ end }}
-					</div>
-				</li>
-				{{ else }}
-				<li class="list-group-item">
-					No Results
-				</li>
-				{{ end }}
-				{{ if .AlphaTrunc }}
-				<li class="list-group-item list-group-item-action truncated float-left">
-					Results probably truncated!
-				</li>
-				{{ end }}
-			</ul>
-		</div>
+							<!-- Badges -->
+							<div class="col-auto">
+								{{ range .Attrs }}
+								<span class="badge badge-primary">{{ badge .Attr }}</span>
+								{{ end }}
+							</div>
+						</div>
 
-		<!-- Tabular Index -->
-		<div class="container col-6 float-right result-list">
-			<h3 class="list-group-title">Tabular Index</h3>
-			<ul class="list-group-flush accordion" id="tabular-index">
-				{{ range $index, $item := .Tabular }}
-				<li class="list-group-item list-group-item-action code-len-{{ len .Code }} index-item float-left">
-
-					<!-- Code and Title -->
-					<button type="button" class="btn btn-outline-secondary btn-sm copy"
-						onclick="copyCode('{{ .Code }} {{ .Desc }}')"></button>
-					<b data-toggle="collapse" data-target=".note-{{ $index }}">
-						<a class="code" href="/?q={{ .Code }}">{{ .Code }}</a>
-						{{ .Desc }}
-					</b>
-
-					<!-- Badges -->
-					<div class="float-right clearfix">
-						{{ range .Notes }}
-						<span class="badge badge-primary">{{ badge .Kind }}</span>
-						{{ end }}
-					</div>
-
-					<!-- Notes -->
-					<div class="list-group-item-body collapse note-{{ $index }} {{ if $index }}{{ else }}show{{ end }}"
-						data-parent="#tabular-index">
-
-						{{ range .Notes }}
-						<p class="note-body">
-							{{ if label .Kind }}{{ label .Kind }}{{ end }}
-							{{ range .Notes }}
-							{{ . }}</br>
+						<div class="list-group-item-body collapse term-{{ $index }} {{ if $index }}{{ else }}show{{ end }}"
+							id="term-{{ $index }}" data-parent="#alphabetic-index">
+							{{ range .Attrs }}
+							{{ if label .Attr }}
+							<div>{{ label .Attr }}<a href="/?q={{ .Value }}">{{ .Value }}</a></div>
 							{{ end }}
-						</p>
-						{{ end }}
-					</div>
-				</li>
-				{{ else }}
-				<li class="list-group-item">
-					No Results
-				</li>
-				{{ end }}
-				{{ if .TabTrunc }}
-				<li class="list-group-item list-group-item-action truncated float-left">
-					Results probably truncated!
-				</li>
-				{{ end }}
-			</ul>
+							{{ end }}
+						</div>
+					</li>
+					{{ else }}
+					<li class="list-group-item">
+						No Results
+					</li>
+					{{ end }}
+					{{ if .AlphaTrunc }}
+					<li class="list-group-item list-group-item-action truncated float-left">
+						Results probably truncated!
+					</li>
+					{{ end }}
+				</ul>
+			</div>
+
+			<!-- Tabular Index -->
+			<div class="col-xl-6">
+				<h3 class="list-group-title">Tabular Index</h3>
+				<ul class="list-group-flush accordion" id="tabular-index">
+					{{ range $index, $item := .Tabular }}
+					<li class="list-group-item list-group-item-action code-len-{{ len .Code }} index-item">
+						<div class="row">
+							<button type="button" class="btn btn-outline-secondary btn-sm copy"
+								onclick="copyCode('{{ .Code }} {{ .Desc }}')"></button>
+
+							<!-- Code and Title -->
+							<div class="col-auto mr-auto">
+								<b data-toggle="collapse" data-target=".note-{{ $index }}">
+									<a class="code" href="/?q={{ .Code }}">{{ .Code }}</a>
+									{{ .Desc }}
+								</b>
+							</div>
+
+							<!-- Badges -->
+							<div class="col-auto">
+								{{ range .Notes }}
+								<span class="badge badge-primary">{{ badge .Kind }}</span>
+								{{ end }}
+							</div>
+						</div>
+
+						<!-- Notes -->
+						<div class="list-group-item-body collapse note-{{ $index }} {{ if $index }}{{ else }}show{{ end }}"
+							data-parent="#tabular-index">
+
+							{{ range .Notes }}
+							<p class="note-body">
+								{{ if label .Kind }}{{ label .Kind }}{{ end }}
+								{{ range .Notes }}
+								{{ . }}</br>
+								{{ end }}
+							</p>
+							{{ end }}
+						</div>
+					</li>
+					{{ else }}
+					<li class="list-group-item">
+						No Results
+					</li>
+					{{ end }}
+					{{ if .TabTrunc }}
+					<li class="list-group-item list-group-item-action truncated">
+						Results probably truncated!
+					</li>
+					{{ end }}
+				</ul>
+			</div>
 		</div>
 	</div>
 
