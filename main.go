@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"flag"
 	"html/template"
 	"io"
 	"io/ioutil"
@@ -16,6 +17,7 @@ import (
 	"github.com/bemasher/icd10/util"
 	"github.com/boltdb/bolt"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -335,25 +337,56 @@ func init() {
 }
 
 func main() {
+	production := flag.Bool("prod", false, "run with production settings")
+	hostnames := flag.String(
+		"hosts",
+		"example.com",
+		"comma-separated list of hostnames to obtain tls certificates for",
+	)
+	certDir := flag.String("certdir", ".cert", "directory to store tls certs")
+	flag.Parse()
+
 	defer docDb.Close()
 
-	mux := http.NewServeMux()
+	m := &autocert.Manager{
+		Cache:      autocert.DirCache(*certDir),
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(strings.Split(*hostnames, ",")...),
+	}
 
 	server := http.Server{
-		Addr:     "127.0.0.1:8080",
-		Handler:  mux,
 		ErrorLog: log.New(os.Stderr, "http: ", log.Lshortfile|log.Lmicroseconds),
 	}
 
+	mux := http.NewServeMux()
 	mux.Handle("/", Logger()(Gzip(IndexHandler{})))
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 	mux.Handle("/assets/", Gzip(http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))))
 
-	log.Printf("Listening on: %s\n", server.Addr)
-	err := server.ListenAndServe()
-	if err != nil {
-		log.Fatalf("%+v\n", errors.Wrap(err, "server.ListenAndServe"))
+	if *production {
+		server.Addr = ":https"
+		server.Handler = m.HTTPHandler(mux)
+		server.TLSConfig = m.TLSConfig()
+
+		go func() {
+			log.Fatal(http.ListenAndServe(":http", m.HTTPHandler(nil)))
+		}()
+
+		log.Printf("Production Listening on: %s\n", server.Addr)
+		err := server.ListenAndServeTLS("", "")
+		if err != nil {
+			log.Fatalf("%+v\n", errors.Wrap(err, "server.ListenAndServeTLS"))
+		}
+	} else {
+		server.Addr = "127.0.0.1:8080"
+		server.Handler = mux
+
+		log.Printf("Development Listening on: %s\n", server.Addr)
+		err := server.ListenAndServe()
+		if err != nil {
+			log.Fatalf("%+v\n", errors.Wrap(err, "server.ListenAndServe"))
+		}
 	}
 }
