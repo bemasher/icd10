@@ -1,0 +1,19 @@
+# github.com/boltdb/bolt v1.3.1
+github.com/boltdb/bolt
+# github.com/dchest/stemmer v0.0.0-20161207102402-66719a20c4b5
+github.com/dchest/stemmer/porter2
+github.com/dchest/stemmer
+# github.com/philhofer/fwd v1.0.0
+github.com/philhofer/fwd
+# github.com/pkg/errors v0.8.1
+github.com/pkg/errors
+# github.com/tinylib/msgp v1.1.0
+github.com/tinylib/msgp/msgp
+# golang.org/x/crypto v0.0.0-20190320223903-b7391e95e576
+golang.org/x/crypto/acme/autocert
+golang.org/x/crypto/acme
+# golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a
+golang.org/x/sys/unix
+# golang.org/x/text v0.3.0
+golang.org/x/text/transform
+golang.org/x/text/unicode/norm
