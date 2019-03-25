@@ -16,22 +16,6 @@
 	<link rel="stylesheet" href="/assets/css/index.css" crossorigin="anonymous">
 
 	<title>ICD-10-CM FTS</title>
-
-	<script>
-		function copyCode(code) {
-			console.log(code);
-			elem = document.createElement('input');
-			elem.value = code;
-			elem.setAttribute('type', 'text');
-			elem.setAttribute('readonly', '');
-			elem.style.display = 'hidden';
-			console.log(elem);
-			document.body.appendChild(elem);
-			elem.select();
-			document.execCommand('copy');
-			document.body.removeChild(elem);
-		};
-	</script>
 </head>
 
 <body>
@@ -173,6 +157,19 @@
 	<script src="/assets/js/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
 	<script src="/assets/js/popper.min.js" crossorigin="anonymous"></script>
 	<script src="/assets/js/bootstrap.min.js" crossorigin="anonymous"></script>
+	<script>
+		function copyCode(code) {
+			elem = document.createElement('input');
+			elem.value = code;
+			elem.setAttribute('type', 'text');
+			elem.setAttribute('readonly', '');
+			elem.style.display = 'hidden';
+			document.body.appendChild(elem);
+			elem.select();
+			document.execCommand('copy');
+			document.body.removeChild(elem);
+		};
+	</script>
 </body>
 
 </html>
