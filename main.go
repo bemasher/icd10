@@ -37,32 +37,55 @@ func Search(bucketId, qry string) (docIds []string, err error) {
 	defer tx.Commit()
 
 	bkt := tx.Bucket([]byte(bucketId))
-	docFreq := map[string]int{}
+	var matchedDocIds map[string]bool
 
 	terms := util.Tokenize(qry)
 	for _, term := range terms {
-		term = strings.TrimRight(term, ".")
+		docIds := util.DocIDMap{}
 
-		b := bkt.Get([]byte(term))
-		if len(b) == 0 {
+		if strings.HasSuffix(term, "*") && term != "*" {
+			term = strings.TrimRight(term, "*")
+
+			c := bkt.Cursor()
+			for k, v := c.Seek([]byte(term)); k != nil; k, v = c.Next() {
+				if !strings.HasPrefix(string(k), term) {
+					break
+				}
+
+				var prefixDocIds util.DocIDMap
+				_, err = prefixDocIds.UnmarshalMsg(v)
+				if err != nil {
+					return nil, errors.Wrap(err, "prefixDocIds.UnmarshalMsg")
+				}
+
+				for k := range prefixDocIds {
+					docIds[k] = true
+				}
+			}
+		} else {
+			v := bkt.Get([]byte(term))
+			if len(v) > 0 {
+				_, err = docIds.UnmarshalMsg(v)
+				if err != nil {
+					return nil, errors.Wrap(err, "docIds.UnmarshalMsg")
+				}
+			}
+		}
+
+		if matchedDocIds == nil {
+			matchedDocIds = docIds
 			continue
 		}
 
-		var termDocIds util.DocIDMap
-		_, err = termDocIds.UnmarshalMsg(b)
-		if err != nil {
-			return nil, errors.Wrap(err, "termDocIds.UnmarshalMsg")
-		}
-
-		for docId := range termDocIds {
-			docFreq[docId]++
+		for docId := range matchedDocIds {
+			if !docIds[docId] {
+				delete(matchedDocIds, docId)
+			}
 		}
 	}
 
-	for docId, freq := range docFreq {
-		if freq == len(terms) {
-			docIds = append(docIds, docId)
-		}
+	for docId := range matchedDocIds {
+		docIds = append(docIds, docId)
 	}
 
 	return

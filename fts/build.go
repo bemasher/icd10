@@ -42,8 +42,8 @@ func buildAlphabeticIndex(db *bolt.DB) {
 				fatalErr(errors.Wrap(err, "term.UnmarshalMsg"))
 			}
 
-			indexPhrase(index, util.TokenizeCode, string(k), term.Code)
-			indexPhrase(index, util.TokenizeCode, string(k), term.Manif)
+			indexPhrase(index, util.Tokenize, string(k), term.Code)
+			indexPhrase(index, util.Tokenize, string(k), term.Manif)
 			indexPhrase(index, util.Tokenize, string(k), term.Title)
 			indexPhrase(index, util.Tokenize, string(k), term.Nemod)
 
@@ -85,7 +85,7 @@ func buildTabularIndex(db *bolt.DB) {
 				return errors.Wrap(err, "diag.UnmarshalMsg")
 			}
 
-			indexPhrase(index, util.TokenizeCode, string(k), diag.Code)
+			indexPhrase(index, util.Tokenize, string(k), diag.Code)
 			indexPhrase(index, util.Tokenize, string(k), diag.Desc)
 
 			for _, noteGroup := range diag.Notes {

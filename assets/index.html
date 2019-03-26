@@ -53,11 +53,11 @@
 					<li class="list-group-item list-group-item-action">
 						<div class="row">
 							<div class="col-auto mr-auto">
-								<b><a class="code" href="/?q={{ .Code }}">{{ codeTrim .Code }}</a></b>
+								<b><a class="code" href="/?q={{ .Code }}*">{{ codeTrim .Code }}</a></b>
 								<b data-toggle="collapse" data-target=".term-{{ $index }}">
 									{{ .Title }} {{ .Nemod }}
 									{{ if .Manif }}
-									<span class="code">[<a href="/?q={{ codeTrim .Manif }}">{{ .Manif }}</a>]</span>
+									<span class="code">[<a href="/?q={{ codeTrim .Manif }}*">{{ .Manif }}</a>]</span>
 									{{ end }}
 								</b>
 							</div>
@@ -105,7 +105,7 @@
 							<!-- Code and Title -->
 							<div class="col-auto mr-auto">
 								<b data-toggle="collapse" data-target=".note-{{ $index }}">
-									<a class="code" href="/?q={{ .Code }}">{{ .Code }}</a>
+									<a class="code" href="/?q={{ .Code }}*">{{ .Code }}</a>
 									{{ .Desc }}
 								</b>
 							</div>

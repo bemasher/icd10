@@ -23,7 +23,7 @@ func normStr(src string) string {
 		}
 
 		switch r {
-		case '.', '-':
+		case '.', '-', '*':
 			return r
 		case '\'':
 			return -1
@@ -36,25 +36,14 @@ func normStr(src string) string {
 func Tokenize(s string) (tokens []string) {
 	tokens = strings.Fields(normStr(s))
 	for idx, token := range tokens {
-		tokens[idx] = porter2.Stemmer.Stem(token)
-	}
-	return
-}
+		isPrefix := strings.HasSuffix(token, "*")
+		token = strings.TrimRight(token, ".-*")
 
-func TokenizeCode(code string) (tokens []string) {
-	code = strings.ToLower(code)
-	code = strings.TrimSuffix(code, "-")
-
-	tokens = append(tokens, code)
-
-	for idx := len(code); idx > 3; idx-- {
-		if idx == 4 {
-			idx--
+		stemmed := porter2.Stemmer.Stem(token)
+		if isPrefix {
+			stemmed += "*"
 		}
-		code = code[:idx]
-
-		tokens = append(tokens, code)
+		tokens[idx] = stemmed
 	}
-
 	return
 }
