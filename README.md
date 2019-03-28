@@ -1,5 +1,5 @@
 # ICD-10-CM Full-Text Search
-A full-text search engine for the ICD-10-CM classification system.
+A full-text search engine for the ICD-10-CM classification system. A live instance can be found at: https://icd.bemasher.net/
 
 ## Features
 At the moment it supports queries by term, code, and prefix:
