@@ -13,16 +13,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	xmlFilename = "icd10cm_tabular_2019.xml"
-
-	boltFilename = "../documents.db"
-	boltBucket   = "tabular"
-
-	batchSize = 1000
-)
-
-type Node struct {
+type TabularNode struct {
 	XMLName xml.Name
 	Content string `xml:",innerxml"`
 
@@ -32,7 +23,7 @@ type Node struct {
 	Notes       []string    `xml:"note"`
 	SevenChrDef []Extension `xml:"sevenChrDef>extension"`
 
-	Children []Node `xml:",any"`
+	Children []TabularNode `xml:",any"`
 }
 
 type Extension struct {
@@ -44,7 +35,7 @@ func (e Extension) String() string {
 	return fmt.Sprintf("%q - %s", e.Char, e.Def)
 }
 
-func (n Node) Walk(ctx context.Context) chan util.Diag {
+func (n TabularNode) Walk(ctx context.Context) chan util.Diag {
 	diags := make(chan util.Diag)
 
 	go func() {
@@ -57,7 +48,7 @@ func (n Node) Walk(ctx context.Context) chan util.Diag {
 	return diags
 }
 
-func (n Node) walk(ctx context.Context, diags chan util.Diag, depth int, parent *Node) {
+func (n TabularNode) walk(ctx context.Context, diags chan util.Diag, depth int, parent *TabularNode) {
 	if len(n.Children) == 0 {
 		n.Children = nil
 	}
@@ -66,14 +57,7 @@ func (n Node) walk(ctx context.Context, diags chan util.Diag, depth int, parent 
 	case <-ctx.Done():
 		return
 	default:
-		switch elem := n.XMLName.Local; elem {
-		case "version":
-			return
-		case "introduction", "sectionIndex":
-			return
-		case "visCategory", "visMax", "visMin", "visRange", "visualImpairment":
-			return
-		case "diag":
+		if n.XMLName.Local == "diag" {
 			// If this node doesn't have any 7th character definitions, and the
 			// parent does, copy them.
 			if len(n.SevenChrDef) == 0 && parent != nil {
@@ -107,76 +91,52 @@ func (n Node) walk(ctx context.Context, diags chan util.Diag, depth int, parent 
 			}
 
 			diags <- diag
-			fallthrough
-		default:
-			for _, child := range n.Children {
-				if len(child.Notes) != 0 {
-					continue
-				}
+		}
 
-				child.walk(ctx, diags, depth+1, &n)
+		for _, child := range n.Children {
+			if len(child.Notes) != 0 {
+				continue
 			}
+
+			child.walk(ctx, diags, depth+1, &n)
 		}
 	}
 }
 
-var stopWords = map[string]bool{
-	"code":       true,
-	"to":         true,
-	"identify":   true,
-	"if":         true,
-	"applicable": true,
-	"for":        true,
-	"of":         true,
-	"the":        true,
-	"or":         true,
-	"associated": true,
-	"any":        true,
-	"and":        true,
-	"as":         true,
-	"such":       true,
-	"specify":    true,
-}
+const (
+	tabularBkt    = "tabular"
+	tabularIdxBkt = "tabular_index"
+)
 
-func init() {
-	log.SetFlags(log.Lshortfile | log.Lmicroseconds)
-}
-
-func main() {
-	docDb, err := bolt.Open(boltFilename, 0600, nil)
+func ParseTabular(db *bolt.DB) (n int, err error) {
+	xmlFile, err := os.Open("icd10cm_tabular_2019.xml")
 	if err != nil {
-		log.Fatal(err)
-	}
-	defer docDb.Close()
-
-	xmlFile, err := os.Open(xmlFilename)
-	if err != nil {
-		log.Fatal(err)
+		return 0, errors.Wrap(err, "os.Open")
 	}
 	defer xmlFile.Close()
 
 	xmlDecoder := xml.NewDecoder(xmlFile)
 
-	var node Node
+	var node TabularNode
 	err = xmlDecoder.Decode(&node)
 	if err != nil {
-		log.Fatal(err)
+		return 0, errors.Wrap(err, "xmlDecoder.Decode")
 	}
 
-	docDb.Update(func(tx *bolt.Tx) error {
-		tx.DeleteBucket([]byte(boltBucket))
+	db.Update(func(tx *bolt.Tx) error {
+		tx.DeleteBucket([]byte(tabularBkt))
 		return nil
 	})
 
-	tx, err := docDb.Begin(true)
+	tx, err := db.Begin(true)
 	if err != nil {
-		log.Fatalf("%+v\n", errors.Wrap(err, "docDb.Begin"))
+		return 0, errors.Wrap(err, "docDb.Begin")
 	}
 	defer tx.Commit()
 
-	bucket, err := tx.CreateBucket([]byte("tabular"))
+	bucket, err := tx.CreateBucket([]byte(tabularBkt))
 	if err != nil {
-		log.Fatalf("%+v\n", errors.Wrap(err, "tx.CreateBucket"))
+		return 0, errors.Wrap(err, "tx.CreateBucket")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -189,15 +149,61 @@ func main() {
 
 		doc, err := diag.MarshalMsg(nil)
 		if err != nil {
-			log.Fatalf("%+v\n", errors.Wrap(err, "diag.MarshalMsg"))
+			return 0, errors.Wrap(err, "diag.MarshalMsg")
 		}
 
 		err = bucket.Put(docId[:docIdLen], doc)
 		if err != nil {
-			log.Fatalf("%+v\n", errors.Wrap(err, "bucket.Put"))
+			return 0, errors.Wrap(err, "bucket.Put")
 		}
 		idx++
 	}
 
-	log.Println("parsed", idx, "diagnoses")
+	return idx, nil
+}
+
+func IndexTabular(db *bolt.DB) (err error) {
+	index := Index{}
+
+	err = db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(tabularBkt))
+		if bucket == nil {
+			return errors.New("tabular bucket missing")
+		}
+
+		c := bucket.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var diag util.Diag
+			_, err := diag.UnmarshalMsg(v)
+			if err != nil {
+				log.Printf("%q\n", string(v))
+				return errors.Wrap(err, "diag.UnmarshalMsg")
+			}
+
+			indexPhrase(index, util.Tokenize, string(k), diag.Code)
+			indexPhrase(index, util.Tokenize, string(k), diag.Desc)
+
+			for _, noteGroup := range diag.Notes {
+				switch noteGroup.Kind {
+				case "excludes1", "excludes2":
+					continue
+				}
+				for idx, note := range noteGroup.Notes {
+					if noteGroup.Kind == "sevenChrNote" && idx == 0 {
+						continue
+					}
+					indexPhrase(index, util.Tokenize, string(k), note)
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return errors.Wrap(err, "db.View")
+	}
+
+	err = WriteIndex(db, "tabular_index", index)
+	return errors.Wrap(err, "WriteIndex")
 }

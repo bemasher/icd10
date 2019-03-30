@@ -27,6 +27,10 @@ const (
 var (
 	docDb     *bolt.DB
 	templates *template.Template
+
+	production bool
+	hostnames  string
+	certDir    string
 )
 
 func Search(bucketId, qry string) (docIds []string, err error) {
@@ -91,7 +95,7 @@ func Search(bucketId, qry string) (docIds []string, err error) {
 	return
 }
 
-func AlphabeticQuery(qry string) (terms []util.Term, err error) {
+func AlphabeticQuery(qry string) (terms []util.AlphabeticTerm, err error) {
 	tx, err := docDb.Begin(false)
 	if err != nil {
 		return nil, errors.Wrap(err, "docDb.Begin")
@@ -105,7 +109,7 @@ func AlphabeticQuery(qry string) (terms []util.Term, err error) {
 		return nil, errors.Wrap(err, "Search")
 	}
 	for _, docId := range docIds {
-		var term util.Term
+		var term util.AlphabeticTerm
 		_, err = term.UnmarshalMsg(docs.Get([]byte(docId)))
 		if err != nil {
 			return nil, errors.Wrap(err, "term.UnmarshalMsg")
@@ -165,7 +169,7 @@ type QueryResults struct {
 	Query   string
 	Stemmed string
 
-	Alphabetic []util.Term
+	Alphabetic []util.AlphabeticTerm
 	Tabular    []util.Diag
 
 	AlphaTrunc bool
@@ -177,6 +181,16 @@ type QueryResults struct {
 type IndexHandler struct{}
 
 func (IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var err error
+
+	// If we're in development mode, parse the templates for each request.
+	if !production {
+		templates, err = ParseTemplates()
+		if err != nil {
+			log.Fatalf("%+v\n", errors.Wrap(err, "ParseTemplates"))
+		}
+	}
+
 	start := time.Now()
 
 	query := r.URL.Query()
@@ -343,17 +357,35 @@ func CodeTrimSuffix(code string) string {
 	return strings.TrimRight(code, ".-")
 }
 
-func init() {
-	log.SetFlags(log.Lshortfile | log.Lmicroseconds)
-
-	var err error
-
-	templates = template.New("").Funcs(template.FuncMap{
+func ParseTemplates() (tmpl *template.Template, err error) {
+	tmpl = template.New("").Funcs(template.FuncMap{
 		"badge":    Badge,
 		"label":    Label,
 		"codeTrim": CodeTrimSuffix,
 	})
-	templates = template.Must(templates.ParseGlob("assets/*.html"))
+	return templates.ParseGlob("assets/*.html")
+}
+
+func init() {
+	log.SetFlags(log.Lshortfile | log.Lmicroseconds)
+
+	flag.BoolVar(&production, "prod", false, "run with production settings")
+	flag.StringVar(
+		&hostnames,
+		"hosts",
+		"example.com",
+		"comma-separated list of hostnames to obtain tls certificates for",
+	)
+
+	flag.StringVar(&certDir, "certdir", ".cert", "directory to store tls certs")
+	flag.Parse()
+
+	var err error
+
+	templates, err = ParseTemplates()
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "ParseTemplates"))
+	}
 
 	docDb, err = bolt.Open("documents.db", 0600, nil)
 	if err != nil {
@@ -362,21 +394,12 @@ func init() {
 }
 
 func main() {
-	production := flag.Bool("prod", false, "run with production settings")
-	hostnames := flag.String(
-		"hosts",
-		"example.com",
-		"comma-separated list of hostnames to obtain tls certificates for",
-	)
-	certDir := flag.String("certdir", ".cert", "directory to store tls certs")
-	flag.Parse()
-
 	defer docDb.Close()
 
 	m := &autocert.Manager{
-		Cache:      autocert.DirCache(*certDir),
+		Cache:      autocert.DirCache(certDir),
 		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist(strings.Split(*hostnames, ",")...),
+		HostPolicy: autocert.HostWhitelist(strings.Split(hostnames, ",")...),
 	}
 
 	server := http.Server{
@@ -387,7 +410,7 @@ func main() {
 	mux.Handle("/", Logger()(Gzip(IndexHandler{})))
 	mux.Handle("/assets/", Gzip(http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))))
 
-	if *production {
+	if production {
 		server.Addr = ":https"
 		server.Handler = m.HTTPHandler(mux)
 		server.TLSConfig = m.TLSConfig()
@@ -402,7 +425,7 @@ func main() {
 			log.Fatalf("%+v\n", errors.Wrap(err, "server.ListenAndServeTLS"))
 		}
 	} else {
-		server.Addr = "127.0.0.1:8080"
+		server.Addr = ":8080"
 		server.Handler = mux
 
 		log.Printf("Development Listening on: %s\n", server.Addr)

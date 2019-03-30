@@ -2,32 +2,47 @@ package util
 
 //go:generate msgp
 
-// Alphabetic Index
-type Term struct {
-	Title string `msg:"t"`
-	Nemod string `msg:"n"`
-	Code  string `msg:"c"`
-	Manif string `msg:"m"`
+//msgp:tuple Term Attr Diag Note DrugTerm
 
-	Attrs []Attr `msg:"as"`
+// Alphabetic Index
+type AlphabeticTerm struct {
+	Title string
+	Code  string
+	Manif string
+
+	Attrs []Attr
 }
 
 type Attr struct {
-	Attr  string `msg:"a"`
-	Value string `msg:"v"`
+	Attr  string
+	Value string
 }
 
 // Tabular Index
 type Diag struct {
-	Code string `msg:"c"`
-	Desc string `msg:"d"`
+	Code string
+	Desc string
 
-	Notes []Note `msg:"n"`
+	Notes []Note
 }
 
 type Note struct {
-	Kind  string   `msg:"k"`
-	Notes []string `msg:"ns"`
+	Kind  string
+	Notes []string
+}
+
+// Drug Index
+type DrugTerm struct {
+	Title   string   `xml:"-"`
+	See     string   `xml:"see"`
+	SeeAlso string   `xml:"seeAlso"`
+	Codes   []string `xml:"cell"`
+}
+
+// Utility Types
+type Title struct {
+	Title string `xml:",chardata"`
+	Nemod string `xml:"nemod"`
 }
 
 type DocIDMap map[string]bool

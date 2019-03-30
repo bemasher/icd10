@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
-	"encoding/csv"
 	"encoding/xml"
-	"log"
 	"os"
 	"strings"
 
@@ -14,23 +12,16 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	xmlFilename = "icd10cm_index_2019.xml"
-
-	boltFilename = "../documents.db"
-	boltBucket   = "alphabetic"
-)
-
-type Node struct {
-	Title Title `xml:"title"`
-
+type AlphabeticNode struct {
 	XMLName  xml.Name
-	Content  string `xml:",chardata"`
-	Children []Node `xml:",any"`
+	Content  string           `xml:",chardata"`
+	Children []AlphabeticNode `xml:",any"`
+
+	Title util.Title `xml:"title"`
 }
 
-func (n Node) Walk(ctx context.Context) chan util.Term {
-	terms := make(chan util.Term)
+func (n AlphabeticNode) Walk(ctx context.Context) chan util.AlphabeticTerm {
+	terms := make(chan util.AlphabeticTerm)
 
 	go func() {
 		defer close(terms)
@@ -39,7 +30,7 @@ func (n Node) Walk(ctx context.Context) chan util.Term {
 			case <-ctx.Done():
 				return
 			default:
-				child.walk(ctx, terms, 0, nil)
+				child.walk(ctx, terms, nil)
 			}
 		}
 	}()
@@ -47,7 +38,7 @@ func (n Node) Walk(ctx context.Context) chan util.Term {
 	return terms
 }
 
-func (n Node) walk(ctx context.Context, terms chan util.Term, depth int, breadcrumbs []string) {
+func (n AlphabeticNode) walk(ctx context.Context, terms chan util.AlphabeticTerm, breadcrumbs []string) {
 	if len(n.Children) == 0 {
 		n.Children = nil
 	}
@@ -56,14 +47,16 @@ func (n Node) walk(ctx context.Context, terms chan util.Term, depth int, breadcr
 	case <-ctx.Done():
 		return
 	default:
-		switch elem := n.XMLName.Local; elem {
+		switch n.XMLName.Local {
 		case "mainTerm", "term":
+			if len(n.Title.Nemod) > 0 {
+				n.Title.Title += " " + n.Title.Nemod
+			}
 			breadcrumbs = append(breadcrumbs, n.Title.Title)
 
-			var term util.Term
+			var term util.AlphabeticTerm
 
 			term.Title = strings.Join(breadcrumbs, ", ")
-			term.Nemod = n.Title.Nemod
 
 			for _, child := range n.Children {
 				childName := child.XMLName.Local
@@ -81,67 +74,48 @@ func (n Node) walk(ctx context.Context, terms chan util.Term, depth int, breadcr
 			}
 
 			terms <- term
-			fallthrough
-		default:
-			for _, child := range n.Children {
-				child.walk(ctx, terms, depth+1, breadcrumbs)
-			}
+		}
+
+		for _, child := range n.Children {
+			child.walk(ctx, terms, breadcrumbs)
 		}
 	}
 }
 
-type Title struct {
-	Title string `xml:",chardata" json:",omitempty"`
-	Nemod string `xml:"nemod" json:",omitempty"`
-}
+const (
+	alphaBkt    = "alphabetic"
+	alphaIdxBkt = "alphabetic_index"
+)
 
-func WriteAttr(w *csv.Writer, termId, attr string) {
-	if attr == "" {
-		return
-	}
-
-	w.Write([]string{termId, attr})
-}
-
-func init() {
-	log.SetFlags(log.Lshortfile | log.Lmicroseconds)
-}
-
-func main() {
-	xmlFile, err := os.Open(xmlFilename)
+func ParseAlphabetic(db *bolt.DB) (n int, err error) {
+	xmlFile, err := os.Open("icd10cm_index_2019.xml")
 	if err != nil {
-		log.Fatal(err)
+		return 0, errors.Wrap(err, "os.Open")
 	}
 	defer xmlFile.Close()
 
 	xmlDecoder := xml.NewDecoder(xmlFile)
 
-	var node Node
+	var node AlphabeticNode
 	err = xmlDecoder.Decode(&node)
 	if err != nil {
-		log.Fatal(err)
+		return 0, errors.Wrap(err, "xmlDecoder.Decode")
 	}
 
-	docDb, err := bolt.Open(boltFilename, 0600, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer docDb.Close()
-
-	docDb.Update(func(tx *bolt.Tx) error {
-		tx.DeleteBucket([]byte(boltBucket))
+	db.Update(func(tx *bolt.Tx) error {
+		tx.DeleteBucket([]byte(alphaBkt))
 		return nil
 	})
 
-	tx, err := docDb.Begin(true)
+	tx, err := db.Begin(true)
 	if err != nil {
-		log.Fatalf("%+v\n", errors.Wrap(err, "docDb.Begin"))
+		return 0, errors.Wrap(err, "db.Begin")
 	}
 	defer tx.Commit()
 
-	bucket, err := tx.CreateBucket([]byte(boltBucket))
+	bucket, err := tx.CreateBucket([]byte(alphaBkt))
 	if err != nil {
-		log.Fatalf("%+v\n", errors.Wrap(err, "tx.CreateBucket"))
+		return 0, errors.Wrap(err, "tx.CreateBucket")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,7 +128,7 @@ func main() {
 
 		doc, err := term.MarshalMsg(nil)
 		if err != nil {
-			log.Fatalf("%+v\n", errors.Wrap(err, "json.Marshal"))
+			return 0, errors.Wrap(err, "term.MarshalMsg")
 		}
 
 		bucket.Put(docId[:docIdLen], doc)
@@ -162,5 +136,45 @@ func main() {
 		idx++
 	}
 
-	log.Println("parsed", idx, "terms")
+	return idx, nil
+}
+
+func IndexAlphabetic(db *bolt.DB) (err error) {
+	index := map[string]map[string]bool{}
+	err = db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(alphaBkt))
+		if bucket == nil {
+			return errors.New("alphabetic bucket missing")
+		}
+
+		c := bucket.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var term util.AlphabeticTerm
+			_, err := term.UnmarshalMsg(v)
+			if err != nil {
+				fatalErr(errors.Wrap(err, "term.UnmarshalMsg"))
+			}
+
+			indexPhrase(index, util.Tokenize, string(k), term.Code)
+			indexPhrase(index, util.Tokenize, string(k), term.Manif)
+			indexPhrase(index, util.Tokenize, string(k), term.Title)
+
+			for _, attr := range term.Attrs {
+				indexPhrase(index, util.Tokenize, string(k), attr.Value)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return errors.Wrap(err, "db.View")
+	}
+
+	db.Update(func(tx *bolt.Tx) error {
+		return tx.DeleteBucket([]byte(alphaIdxBkt))
+	})
+
+	err = WriteIndex(db, alphaIdxBkt, index)
+	return errors.Wrap(err, "WriteIndex")
 }

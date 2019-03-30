@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/bemasher/icd10/util"
 	"github.com/boltdb/bolt"
@@ -23,93 +24,7 @@ func indexPhrase(index map[string]map[string]bool, tokenFn func(string) []string
 	}
 }
 
-func buildAlphabeticIndex(db *bolt.DB) {
-	index := map[string]map[string]bool{}
-
-	log.Println("Building alphabetic index...")
-	err := db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("alphabetic"))
-		if bucket == nil {
-			return errors.New("alphabetic bucket missing")
-		}
-
-		c := bucket.Cursor()
-
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			var term util.Term
-			_, err := term.UnmarshalMsg(v)
-			if err != nil {
-				fatalErr(errors.Wrap(err, "term.UnmarshalMsg"))
-			}
-
-			indexPhrase(index, util.Tokenize, string(k), term.Code)
-			indexPhrase(index, util.Tokenize, string(k), term.Manif)
-			indexPhrase(index, util.Tokenize, string(k), term.Title)
-			indexPhrase(index, util.Tokenize, string(k), term.Nemod)
-
-			for _, attr := range term.Attrs {
-				indexPhrase(index, util.Tokenize, string(k), attr.Value)
-			}
-		}
-
-		return nil
-	})
-	fatalErr(errors.Wrap(err, "db.View"))
-
-	db.Update(func(tx *bolt.Tx) error {
-		return tx.DeleteBucket([]byte("alphabetic_index"))
-	})
-
-	log.Println("Writing alphabetic index...")
-	err = WriteIndex(db, "alphabetic_index", index)
-	fatalErr(errors.Wrap(err, "WriteIndex"))
-}
-
-func buildTabularIndex(db *bolt.DB) {
-	index := map[string]map[string]bool{}
-
-	log.Println("Building tabular index...")
-	err := db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("tabular"))
-		if bucket == nil {
-			return errors.New("tabular bucket missing")
-		}
-
-		c := bucket.Cursor()
-
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			var diag util.Diag
-			_, err := diag.UnmarshalMsg(v)
-			if err != nil {
-				log.Printf("%q\n", string(v))
-				return errors.Wrap(err, "diag.UnmarshalMsg")
-			}
-
-			indexPhrase(index, util.Tokenize, string(k), diag.Code)
-			indexPhrase(index, util.Tokenize, string(k), diag.Desc)
-
-			for _, noteGroup := range diag.Notes {
-				switch noteGroup.Kind {
-				case "excludes1", "excludes2":
-					continue
-				}
-				for idx, note := range noteGroup.Notes {
-					if noteGroup.Kind == "sevenChrNote" && idx == 0 {
-						continue
-					}
-					indexPhrase(index, util.Tokenize, string(k), note)
-				}
-			}
-		}
-
-		return nil
-	})
-	fatalErr(errors.Wrap(err, "db.View"))
-
-	log.Println("Writing tabular index...")
-	err = WriteIndex(db, "tabular_index", index)
-	fatalErr(errors.Wrap(err, "WriteIndex"))
-}
+type Index map[string]map[string]bool
 
 func WriteIndex(db *bolt.DB, bucketName string, index map[string]map[string]bool) (err error) {
 	db.Update(func(tx *bolt.Tx) error {
@@ -141,10 +56,33 @@ func init() {
 }
 
 func main() {
-	db, err := bolt.Open("../documents.db", 0600, nil)
+	db, err := bolt.Open("../documents.db", 0600, &bolt.Options{Timeout: time.Second})
 	fatalErr(err)
 	defer db.Close()
 
-	buildAlphabeticIndex(db)
-	buildTabularIndex(db)
+	log.Println("parsing alphabetic terms...")
+	n, err := ParseAlphabetic(db)
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "ParseAlphabetic"))
+	}
+	log.Println("parsed", n, "alphabetic terms")
+
+	log.Println("indexing alphabetic terms...")
+	err = IndexAlphabetic(db)
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "IndexAlphabetic"))
+	}
+
+	log.Println("parsing tabular diagnoses...")
+	n, err = ParseTabular(db)
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "ParseTabular"))
+	}
+	log.Println("parsed", n, "tabular diagnoses")
+
+	log.Println("indexing tabular diagnoses...")
+	err = IndexTabular(db)
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "IndexTabular"))
+	}
 }
