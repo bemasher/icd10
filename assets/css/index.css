@@ -75,3 +75,12 @@ ul {
 .result-list {
 	margin-bottom: 1em;
 }
+
+.mark-github {
+	margin-right: 3rem;
+	margin-bottom: 1rem;
+}
+
+.mark-github img {
+	height: 100%;
+}
