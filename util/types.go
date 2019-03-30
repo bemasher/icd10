@@ -2,6 +2,7 @@ package util
 
 //go:generate msgp
 
+//msgp:ignore Title
 //msgp:tuple Term Attr Diag Note DrugTerm
 
 // Alphabetic Index
@@ -39,10 +40,11 @@ type DrugTerm struct {
 	Codes   []string `xml:"cell"`
 }
 
+// FTS Types
+type DocIDMap map[string]bool
+
 // Utility Types
 type Title struct {
 	Title string `xml:",chardata"`
 	Nemod string `xml:"nemod"`
 }
-
-type DocIDMap map[string]bool
