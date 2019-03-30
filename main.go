@@ -228,7 +228,7 @@ func (IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	results.Duration = time.Now().Sub(start).Round(time.Microsecond)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	err := templates.ExecuteTemplate(w, "index.html", results)
+	err = templates.ExecuteTemplate(w, "index.html", results)
 	if err != nil {
 		log.Printf("%+v\n", errors.Wrap(err, "templates.ExecuteTemplate"))
 	}
@@ -363,7 +363,7 @@ func ParseTemplates() (tmpl *template.Template, err error) {
 		"label":    Label,
 		"codeTrim": CodeTrimSuffix,
 	})
-	return templates.ParseGlob("assets/*.html")
+	return tmpl.ParseGlob("assets/*.html")
 }
 
 func init() {
