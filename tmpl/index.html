@@ -87,6 +87,16 @@
 			document.body.removeChild(elem);
 		};
 	</script>
+
+	{{ if .GTag }}
+	<script async src="https://www.googletagmanager.com/gtag/js?id={{ .GTag }}"></script>
+	<script>
+		window.dataLayer = window.dataLayer || [];
+		function gtag() { dataLayer.push(arguments); }
+		gtag('js', new Date());
+		gtag('config', '{{ .GTag }}');
+	</script>
+	{{ end }}
 </body>
 
 </html>

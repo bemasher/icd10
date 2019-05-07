@@ -37,7 +37,8 @@ var (
 	hostnames  string
 	certDir    string
 
-	commit string // set to git rev-parse --short HEAD
+	commit string // Set to git rev-parse --short HEAD
+	gtag   string // Set to google analytics tag.
 )
 
 func SearchIdx(idxBkt, qry string) (docIds []string, err error) {
@@ -157,7 +158,9 @@ type TemplateData struct {
 	*sync.Mutex
 
 	TmplName string
-	Commit   string
+
+	Commit string // Current commit hash, used for cache-busting static assets.
+	GTag   string // Google analytics tag.
 
 	Query   string
 	Stemmed string
@@ -180,12 +183,14 @@ func (IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Mutex:       new(sync.Mutex),
 		TmplName:    "index",
 		Commit:      commit,
+		GTag:        gtag,
 		Results:     map[string]interface{}{},
 		ResultLimit: ResultLimit,
 	}
 
-	// If the commit value isn't set, supply a value that should always cache-bust.
-	if tmplData.Commit == "" {
+	// If the commit value isn't set and we're in development mode,
+	// supply a value that should always cache-bust.
+	if tmplData.Commit == "" && !production {
 		tmplData.Commit = strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 
