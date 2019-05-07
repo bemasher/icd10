@@ -15,12 +15,14 @@ func fatalErr(err error) {
 	}
 }
 
-func indexPhrase(index map[string]map[string]bool, tokenFn func(string) []string, docId, phrase string) {
+func indexPhrase(index map[string]map[string]bool, tokenFn func(string) []util.Token, docId, phrase string) {
 	for _, token := range tokenFn(phrase) {
-		if _, ok := index[token]; !ok {
-			index[token] = map[string]bool{}
+		for _, form := range token.Forms {
+			if _, ok := index[form]; !ok {
+				index[form] = map[string]bool{}
+			}
+			index[form][docId] = true
 		}
-		index[token][docId] = true
 	}
 }
 
@@ -60,14 +62,35 @@ func main() {
 	fatalErr(err)
 	defer db.Close()
 
+	var n uint64
+
 	log.Println("parsing alphabetic terms...")
-	n, err := ParseAlphabetic(db)
+	err = ParseAlphabetic(db, "icd10cm_index_2019.xml", &AlphabeticNode{}, true, "alpha", &n)
 	if err != nil {
 		log.Fatalf("%+v\n", errors.Wrap(err, "ParseAlphabetic"))
 	}
-	log.Println("parsed", n, "alphabetic terms")
 
-	log.Println("indexing alphabetic terms...")
+	log.Println("parsing drugs...")
+	err = ParseAlphabetic(db, "icd10cm_drug_2019.xml", &DrugNode{}, false, "drug", &n)
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "ParseAlphabetic"))
+	}
+
+	log.Println("parsing external cause terms...")
+	err = ParseAlphabetic(db, "icd10cm_eindex_2019.xml", &AlphabeticNode{}, false, "ext", &n)
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "ParseAlphabetic"))
+	}
+
+	log.Println("parsing neoplasm terms...")
+	err = ParseAlphabetic(db, "icd10cm_neoplasm_2019.xml", &NeoplasmNode{}, false, "neo", &n)
+	if err != nil {
+		log.Fatalf("%+v\n", errors.Wrap(err, "ParseAlphabetic"))
+	}
+
+	log.Println("parsed", n, "alphabetic terms\n")
+
+	log.Println("indexing alphabetic terms...\n")
 	err = IndexAlphabetic(db)
 	if err != nil {
 		log.Fatalf("%+v\n", errors.Wrap(err, "IndexAlphabetic"))
@@ -78,7 +101,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%+v\n", errors.Wrap(err, "ParseTabular"))
 	}
-	log.Println("parsed", n, "tabular diagnoses")
+	log.Println("parsed", n, "tabular diagnoses\n")
 
 	log.Println("indexing tabular diagnoses...")
 	err = IndexTabular(db)

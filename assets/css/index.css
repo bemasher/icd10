@@ -7,18 +7,6 @@ ul {
 	padding-inline-start: 0;
 }
 
-.input-group {
-	padding-top: 1em;
-}
-
-.list-group-title {
-	padding-top: 1em;
-}
-
-.list-group-item-body {
-	padding-left: 2em;
-}
-
 .note-body {
 	padding-left: 2em;
 	margin-top: 0.5em;
@@ -34,14 +22,7 @@ ul {
 .code-len-5 { padding-left: 5.5em; }
 .code-len-6 { padding-left: 7.5em; }
 .code-len-7 { padding-left: 9.5em; }
-
-.seven-chr-def {
-	padding-left: 2em;
-}
-
-.alert-margin {
-	margin-top: 1em;
-}
+.code-len-8 { padding-left: 11.5em; }
 
 .code {
 	font-family: 'Consolas', monospace;
@@ -72,15 +53,17 @@ ul {
 	background: #EEE;
 }
 
-.result-list {
-	margin-bottom: 1em;
-}
-
 .mark-github {
-	margin-right: 3rem;
+	margin-right: 1rem;
 	margin-bottom: 1rem;
 }
 
 .mark-github img {
-	height: 100%;
+	width: 50px;
+	height: 50px;
+}
+
+.input-group-prepend > select {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
 }

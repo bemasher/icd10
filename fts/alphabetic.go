@@ -12,6 +12,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+type Walker interface {
+	Walk(context.Context) chan util.AlphabeticTerm
+}
+
 type AlphabeticNode struct {
 	XMLName  xml.Name
 	Content  string           `xml:",chardata"`
@@ -87,56 +91,60 @@ const (
 	alphaIdxBkt = "alphabetic_index"
 )
 
-func ParseAlphabetic(db *bolt.DB) (n int, err error) {
-	xmlFile, err := os.Open("icd10cm_index_2019.xml")
+func ParseAlphabetic(db *bolt.DB, filename string, walker Walker, delBkt bool, src string, idx *uint64) (err error) {
+	xmlFile, err := os.Open(filename)
 	if err != nil {
-		return 0, errors.Wrap(err, "os.Open")
+		return errors.Wrap(err, "os.Open")
 	}
 	defer xmlFile.Close()
 
 	xmlDecoder := xml.NewDecoder(xmlFile)
 
-	var node AlphabeticNode
-	err = xmlDecoder.Decode(&node)
+	err = xmlDecoder.Decode(&walker)
 	if err != nil {
-		return 0, errors.Wrap(err, "xmlDecoder.Decode")
+		return errors.Wrap(err, "xmlDecoder.Decode")
 	}
 
-	db.Update(func(tx *bolt.Tx) error {
-		tx.DeleteBucket([]byte(alphaBkt))
-		return nil
-	})
+	if delBkt {
+		db.Update(func(tx *bolt.Tx) error {
+			tx.DeleteBucket([]byte(alphaBkt))
+			return nil
+		})
+	}
 
 	tx, err := db.Begin(true)
 	if err != nil {
-		return 0, errors.Wrap(err, "db.Begin")
+		return errors.Wrap(err, "db.Begin")
 	}
 	defer tx.Commit()
 
-	bucket, err := tx.CreateBucket([]byte(alphaBkt))
+	bucket, err := tx.CreateBucketIfNotExists([]byte(alphaBkt))
 	if err != nil {
-		return 0, errors.Wrap(err, "tx.CreateBucket")
+		return errors.Wrap(err, "tx.CreateBucket")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	idx := 0
-	for term := range node.Walk(ctx) {
+	for term := range walker.Walk(ctx) {
 		docId := make([]byte, 8)
-		docIdLen := binary.PutUvarint(docId, uint64(idx))
+		docIdLen := binary.PutUvarint(docId, *idx)
+
+		if src != "" {
+			term.Src = src
+		}
 
 		doc, err := term.MarshalMsg(nil)
 		if err != nil {
-			return 0, errors.Wrap(err, "term.MarshalMsg")
+			return errors.Wrap(err, "term.MarshalMsg")
 		}
 
 		bucket.Put(docId[:docIdLen], doc)
 
-		idx++
+		*idx++
 	}
 
-	return idx, nil
+	return nil
 }
 
 func IndexAlphabetic(db *bolt.DB) (err error) {

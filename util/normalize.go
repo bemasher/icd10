@@ -33,17 +33,51 @@ func normStr(src string) string {
 	}, string(dst))
 }
 
-func Tokenize(s string) (tokens []string) {
-	tokens = strings.Fields(normStr(s))
-	for idx, token := range tokens {
-		isPrefix := strings.HasSuffix(token, "*")
-		token = strings.TrimRight(token, ".-*")
+type Token struct {
+	Src        string
+	Forms      []string
+	IsPrefix   bool
+	IsNegative bool
+}
 
-		stemmed := porter2.Stemmer.Stem(token)
-		if isPrefix {
-			stemmed += "*"
+func NewToken(src string) (t Token) {
+	t.Src = src
+	t.IsPrefix = strings.HasSuffix(src, "*")
+	t.IsNegative = strings.HasPrefix(src, "-")
+	src = strings.TrimSuffix(src, "*")
+	src = strings.TrimPrefix(src, "-")
+
+	forms := map[string]bool{}
+
+	t.AddForm(forms, src)
+	t.AddForm(forms, porter2.Stemmer.Stem(src))
+
+	src = strings.Map(func(r rune) rune {
+		if r == '-' {
+			return -1
 		}
-		tokens[idx] = stemmed
+		return r
+	}, src)
+
+	t.AddForm(forms, src)
+	t.AddForm(forms, porter2.Stemmer.Stem(src))
+
+	return
+}
+
+func (t *Token) AddForm(formSet map[string]bool, form string) {
+	if form == "" || formSet[form] {
+		return
+	}
+	t.Forms = append(t.Forms, form)
+	formSet[form] = true
+}
+
+func Tokenize(s string) (tokens []Token) {
+	fields := strings.Fields(normStr(s))
+	tokens = make([]Token, len(fields))
+	for idx, token := range fields {
+		tokens[idx] = NewToken(token)
 	}
 	return
 }

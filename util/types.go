@@ -10,6 +10,7 @@ type AlphabeticTerm struct {
 	Title string
 	Code  string
 	Manif string
+	Src   string
 
 	Attrs []Attr
 }
@@ -30,14 +31,6 @@ type Diag struct {
 type Note struct {
 	Kind  string
 	Notes []string
-}
-
-// Drug Index
-type DrugTerm struct {
-	Title   string   `xml:"-"`
-	See     string   `xml:"see"`
-	SeeAlso string   `xml:"seeAlso"`
-	Codes   []string `xml:"cell"`
 }
 
 // FTS Types

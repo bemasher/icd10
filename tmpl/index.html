@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<!-- Required meta tags -->
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+	<!-- Favicon -->
+	<link rel="icon" type="image/png" href="/assets/img/beaker.png?v={{ .Commit }}">
+
+	<!-- Bootstrap CSS -->
+	<link rel="stylesheet" href="/assets/css/bootstrap.min.css?v={{ .Commit }}" crossorigin="anonymous">
+
+	<!-- Index CSS -->
+	<link rel="stylesheet" href="/assets/css/index.css?v={{ .Commit }}" crossorigin="anonymous">
+
+	<title>ICD-10-CM FTS</title>
+</head>
+
+<body>
+	<!-- Search Bar -->
+	<div class="container-fluid">
+		<div class="row justify-content-center">
+			<div class="col-xl-8 search mt-3 mb-3">
+				<form action="/" method="GET">
+					<div class="input-group">
+						<input type="text" class="form-control" placeholder="Query" name="q" value="{{ .Query }}"
+							autofocus>
+						<div class="input-group-append">
+							<button class="btn btn-primary" type="submit">Search</button>
+						</div>
+					</div>
+				</form>
+
+				{{ range .Errors }}
+				{{ if . }}
+				<div class="alert alert-danger alert-margin mt-3" role="alert">
+					<pre>{{ printf "%+v" . }}</pre>
+				</div>
+				{{ end }}
+				{{ end }}
+			</div>
+		</div>
+	</div>
+
+	{{ block "content" . }}
+	<div class="container-fluid">
+		<div class="row-fluid">
+			<div>
+			</div>
+		</div>
+	</div>
+	{{ end }}
+
+	<div class="container-fluid mb-3">
+		<div class="row">
+			<div class="col">
+				<div class="alert alert-secondary" role="alert">
+					{{ block "result_counts" . }}
+					<span>&nbsp;</span>
+					{{ end }}
+				</div>
+			</div>
+			<div class="col-auto mark-github">
+				<a href="https://github.com/bemasher/icd10">
+					<img src="/assets/img/mark-github.svg?v={{ .Commit }}">
+				</a>
+			</div>
+		</div>
+	</div>
+
+	<!-- jQuery first, then Popper.js, then Bootstrap JS -->
+	<script src="/assets/js/jquery-3.3.1.min.js?v={{ .Commit }}" crossorigin="anonymous"></script>
+	<script src="/assets/js/popper.min.js?v={{ .Commit }}" crossorigin="anonymous"></script>
+	<script src="/assets/js/bootstrap.min.js?v={{ .Commit }}" crossorigin="anonymous"></script>
+	<script>
+		function copyCode(code) {
+			elem = document.createElement('input');
+			elem.value = code;
+			elem.setAttribute('type', 'text');
+			elem.setAttribute('readonly', '');
+			elem.style.display = 'hidden';
+			document.body.appendChild(elem);
+			elem.select();
+			document.execCommand('copy');
+			document.body.removeChild(elem);
+		};
+	</script>
+</body>
+
+</html>

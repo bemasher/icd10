@@ -1,0 +1,115 @@
+{{ define "content" }}
+<div class="container-fluid mt-3">
+    <div class="row">
+        <!-- Alphabetic Index -->
+        <div class="col-xl-6">
+            <h3 class="list-group-title">Alphabetic Index</h3>
+            <ul class="list-group-flush accordion" id="alphabetic-index">
+                {{ range $index, $term := .Results.Alphabetic }}
+                <li class="list-group-item list-group-item-action">
+                    <div class="row">
+                        <div class="col-auto mr-auto">
+                            <b><a class="code" href="/?t=cm&q={{ .Code }}*">{{ codeTrim .Code }}</a></b>
+                            <b data-toggle="collapse" data-target=".term-{{ $index }}">
+                                {{ .Title }}
+                                {{ if .Manif }}
+                                <span class="code">[<a href="/?t=cm&q={{ codeTrim .Manif }}*">{{ .Manif }}</a>]</span>
+                                {{ end }}
+                            </b>
+                        </div>
+
+                        <!-- Badges -->
+                        <div class="col-auto">
+                            {{ if .Src }}
+                            <span class="badge badge-warning">{{ source .Src }}</span>
+                            {{ end }}
+                            {{ range .Attrs }}
+                            <span class="badge badge-primary">{{ badge .Attr }}</span>
+                            {{ end }}
+                        </div>
+                    </div>
+
+                    <div class="list-group-item-body collapse term-{{ $index }} {{ if $index }}{{ else }}show{{ end }}"
+                        id="term-{{ $index }}" data-parent="#alphabetic-index">
+                        {{ range .Attrs }}
+                        {{ if label .Attr }}
+                        <div>{{ label .Attr }}<a href="/?t=cm&q={{ .Value }}">{{ .Value }}</a></div>
+                        {{ end }}
+                        {{ end }}
+                    </div>
+                </li>
+                {{ else }}
+                <li class="list-group-item">
+                    No Results
+                </li>
+                {{ end }}
+                {{ $length := len .Results.Alphabetic }}
+                {{ if eq $length .ResultLimit }}
+                <li class="list-group-item list-group-item-action truncated float-left">
+                    Results probably truncated!
+                </li>
+                {{ end }}
+            </ul>
+        </div>
+
+        <!-- Tabular Index -->
+        <div class="col-xl-6">
+            <h3 class="list-group-title">Tabular Index</h3>
+            <ul class="list-group-flush accordion" id="tabular-index">
+                {{ range $index, $item := .Results.Tabular }}
+                <li class="list-group-item list-group-item-action code-len-{{ len .Code }} index-item">
+                    <div class="row">
+                        <button type="button" class="btn btn-outline-secondary btn-sm copy"
+                            onclick="copyCode('{{ .Code }} {{ .Desc }}')"></button>
+
+                        <!-- Code and Title -->
+                        <div class="col-auto mr-auto">
+                            <b data-toggle="collapse" data-target=".note-{{ $index }}">
+                                <a class="code" href="/?t=cm&q={{ .Code }}*">{{ .Code }}</a>
+                                {{ .Desc }}
+                            </b>
+                        </div>
+
+                        <!-- Badges -->
+                        <div class="col-auto">
+                            {{ range .Notes }}
+                            <span class="badge badge-primary">{{ badge .Kind }}</span>
+                            {{ end }}
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="list-group-item-body collapse note-{{ $index }} {{ if $index }}{{ else }}show{{ end }}"
+                        data-parent="#tabular-index">
+
+                        {{ range .Notes }}
+                        <p class="note-body ml-3">
+                            {{ if label .Kind }}{{ label .Kind }}{{ end }}
+                            {{ range .Notes }}
+                            {{ . }}</br>
+                            {{ end }}
+                        </p>
+                        {{ end }}
+                    </div>
+                </li>
+                {{ else }}
+                <li class="list-group-item">
+                    No Results
+                </li>
+                {{ end }}
+                {{ $length := len .Results.Tabular }}
+                {{ if eq $length .ResultLimit }}
+                <li class="list-group-item list-group-item-action truncated">
+                    Results probably truncated!
+                </li>
+                {{ end }}
+            </ul>
+        </div>
+    </div>
+</div>
+{{ end }}
+
+{{ define "result_counts" }}
+Query <code>"{{ .Query }}"</code> returned {{ len .Results.Alphabetic }} alphabetic
+index and {{ len .Results.Tabular }} tabular index results in {{ .Duration }}.
+{{ end }}

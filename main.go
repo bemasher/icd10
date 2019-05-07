@@ -1,15 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"flag"
+	"fmt"
 	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,160 +24,149 @@ import (
 
 const (
 	ResultLimit = 250
+
+	defaultQuerySet = "cm"
 )
 
 var (
-	docDb     *bolt.DB
-	templates *template.Template
+	docDb *bolt.DB
+
+	tmpls map[string]*template.Template
 
 	production bool
 	hostnames  string
 	certDir    string
+
+	commit string // set to git rev-parse --short HEAD
 )
 
-func Search(bucketId, qry string) (docIds []string, err error) {
+func SearchIdx(idxBkt, qry string) (docIds []string, err error) {
 	tx, err := docDb.Begin(false)
 	if err != nil {
 		return nil, errors.Wrap(err, "docDb.Begin")
 	}
 	defer tx.Commit()
 
-	bkt := tx.Bucket([]byte(bucketId))
-	var matchedDocIds map[string]bool
+	bkt := tx.Bucket([]byte(idxBkt))
+	var matches util.DocIDMap
 
-	terms := util.Tokenize(qry)
-	for _, term := range terms {
-		docIds := util.DocIDMap{}
+	for _, token := range util.Tokenize(qry) {
+		tokenDocIds := util.DocIDMap{}
 
-		if strings.HasSuffix(term, "*") && term != "*" {
-			term = strings.TrimRight(term, "*")
-
-			c := bkt.Cursor()
-			for k, v := c.Seek([]byte(term)); k != nil; k, v = c.Next() {
-				if !strings.HasPrefix(string(k), term) {
-					break
-				}
-
-				var prefixDocIds util.DocIDMap
-				_, err = prefixDocIds.UnmarshalMsg(v)
+		if token.IsPrefix {
+			for _, form := range token.Forms {
+				docIds, err := SearchPrefix(bkt, form)
 				if err != nil {
-					return nil, errors.Wrap(err, "prefixDocIds.UnmarshalMsg")
+					return nil, errors.Wrap(err, "SearchPrefix")
 				}
-
-				for k := range prefixDocIds {
-					docIds[k] = true
+				for docId := range docIds {
+					tokenDocIds[docId] = true
 				}
 			}
 		} else {
-			v := bkt.Get([]byte(term))
-			if len(v) > 0 {
-				_, err = docIds.UnmarshalMsg(v)
+			for _, form := range token.Forms {
+				docIds, err := SearchTerm(bkt, form)
 				if err != nil {
-					return nil, errors.Wrap(err, "docIds.UnmarshalMsg")
+					return nil, errors.Wrap(err, "SearchTerm")
+				}
+				for docId := range docIds {
+					tokenDocIds[docId] = true
 				}
 			}
 		}
 
-		if matchedDocIds == nil {
-			matchedDocIds = docIds
+		if matches == nil {
+			matches = tokenDocIds
 			continue
 		}
 
-		for docId := range matchedDocIds {
-			if !docIds[docId] {
-				delete(matchedDocIds, docId)
+		if token.IsNegative {
+			for docId := range tokenDocIds {
+				delete(matches, docId)
+			}
+		} else {
+			for docId := range matches {
+				if !tokenDocIds[docId] {
+					delete(matches, docId)
+				}
 			}
 		}
 	}
 
-	for docId := range matchedDocIds {
+	for docId := range matches {
 		docIds = append(docIds, docId)
 	}
 
 	return
 }
 
-func AlphabeticQuery(qry string) (terms []util.AlphabeticTerm, err error) {
+func SearchTerm(bkt *bolt.Bucket, term string) (docIds util.DocIDMap, err error) {
+	v := bkt.Get([]byte(term))
+	if v == nil {
+		return nil, nil
+	}
+
+	_, err = docIds.UnmarshalMsg(v)
+	return docIds, errors.Wrap(err, "docIds.UnmarshalMsg")
+}
+
+func SearchPrefix(bkt *bolt.Bucket, prefix string) (docIds util.DocIDMap, err error) {
+	docIds = make(util.DocIDMap)
+
+	c := bkt.Cursor()
+	p := []byte(prefix)
+	for k, v := c.Seek(p); k != nil && bytes.HasPrefix(k, p); k, v = c.Next() {
+		var prefixDocIds util.DocIDMap
+		_, err = prefixDocIds.UnmarshalMsg(v)
+		if err != nil {
+			return nil, errors.Wrap(err, "prefixDocIds.UnmarshalMsg")
+		}
+
+		for k := range prefixDocIds {
+			docIds[k] = true
+		}
+	}
+
+	return
+}
+
+func SearchDocs(docBkt, idxBkt, qry string, unmarshal func([]byte) error) (err error) {
 	tx, err := docDb.Begin(false)
 	if err != nil {
-		return nil, errors.Wrap(err, "docDb.Begin")
+		return errors.Wrap(err, "docDb.Begin")
 	}
 	defer tx.Commit()
 
-	docs := tx.Bucket([]byte("alphabetic"))
+	docs := tx.Bucket([]byte(docBkt))
 
-	docIds, err := Search("alphabetic_index", qry)
+	docIds, err := SearchIdx(idxBkt, qry)
 	if err != nil {
-		return nil, errors.Wrap(err, "Search")
+		return errors.Wrap(err, "SearchIdx")
 	}
 	for _, docId := range docIds {
-		var term util.AlphabeticTerm
-		_, err = term.UnmarshalMsg(docs.Get([]byte(docId)))
+		err = unmarshal(docs.Get([]byte(docId)))
 		if err != nil {
-			return nil, errors.Wrap(err, "term.UnmarshalMsg")
+			return errors.Wrap(err, "unmarshal")
 		}
-
-		terms = append(terms, term)
 	}
 
-	sort.Slice(terms, func(i, j int) bool {
-		return strings.Compare(terms[i].Title, terms[j].Title) < 0
-	})
-
-	trim := ResultLimit
-	if len(terms) < trim {
-		trim = len(terms)
-	}
-
-	return terms[:trim], nil
+	return nil
 }
 
-func TabularQuery(qry string) (diags []util.Diag, err error) {
-	tx, err := docDb.Begin(false)
-	if err != nil {
-		return nil, errors.Wrap(err, "docDb.Begin")
-	}
-	defer tx.Commit()
+type TemplateData struct {
+	*sync.Mutex
 
-	docs := tx.Bucket([]byte("tabular"))
+	TmplName string
+	Commit   string
 
-	docIds, err := Search("tabular_index", qry)
-	if err != nil {
-		return nil, errors.Wrap(err, "Search")
-	}
-	for _, docId := range docIds {
-		var diag util.Diag
-		_, err = diag.UnmarshalMsg(docs.Get([]byte(docId)))
-		if err != nil {
-			return nil, errors.Wrap(err, "term.UnmarshalMsg")
-		}
-
-		diags = append(diags, diag)
-	}
-
-	sort.Slice(diags, func(i, j int) bool {
-		return strings.Compare(diags[i].Code, diags[j].Code) < 0
-	})
-
-	trim := ResultLimit
-	if len(diags) < trim {
-		trim = len(diags)
-	}
-
-	return diags[:trim], nil
-}
-
-type QueryResults struct {
 	Query   string
 	Stemmed string
 
-	Alphabetic []util.AlphabeticTerm
-	Tabular    []util.Diag
+	Results map[string]interface{}
 
-	AlphaTrunc bool
-	TabTrunc   bool
-	Duration   time.Duration
-	Errors     []error
+	ResultLimit int
+	Duration    time.Duration
+	Errors      []error
 }
 
 type IndexHandler struct{}
@@ -183,67 +174,81 @@ type IndexHandler struct{}
 func (IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 
+	start := time.Now()
+
+	tmplData := TemplateData{
+		Mutex:       new(sync.Mutex),
+		TmplName:    "index",
+		Commit:      commit,
+		Results:     map[string]interface{}{},
+		ResultLimit: ResultLimit,
+	}
+
+	// If the commit value isn't set, supply a value that should always cache-bust.
+	if tmplData.Commit == "" {
+		tmplData.Commit = strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+
 	// If we're in development mode, parse the templates for each request.
 	if !production {
-		templates, err = ParseTemplates()
+		err = ParseTemplates()
 		if err != nil {
 			log.Fatalf("%+v\n", errors.Wrap(err, "ParseTemplates"))
 		}
 	}
 
-	start := time.Now()
-
 	query := r.URL.Query()
 
-	var terms string
-	if _, ok := query["q"]; ok {
-		terms = query["q"][0]
+	if q, ok := query["q"]; ok {
+		tmplData.Query = q[0]
+		tmplData.Stemmed = fmt.Sprintf("%+v\n", util.Tokenize(q[0]))
 	}
 
-	wg := new(sync.WaitGroup)
-	wg.Add(2)
+	if queryFns, ok := querySets[defaultQuerySet]; ok {
+		tmplData.TmplName = defaultQuerySet
 
-	results := QueryResults{
-		Query:   terms,
-		Stemmed: strings.Join(util.Tokenize(terms), " "),
+		wg := new(sync.WaitGroup)
+		wg.Add(len(queryFns))
+
+		for _, queryFn := range queryFns {
+			go func(q Query) {
+				tmplData.Lock()
+				tmplData.Results[q.Name], err = q.Fn(tmplData.Query)
+				tmplData.Unlock()
+				if err != nil {
+					tmplData.Errors = append(tmplData.Errors, errors.Wrap(err, "q.Fn"))
+				}
+
+				wg.Done()
+			}(queryFn)
+		}
+
+		wg.Wait()
 	}
 
-	go func() {
-		var err error
-		results.Alphabetic, err = AlphabeticQuery(results.Query)
-		results.Errors = append(results.Errors, err)
-		results.AlphaTrunc = len(results.Alphabetic) == ResultLimit
-		wg.Done()
-	}()
-
-	go func() {
-		var err error
-		results.Tabular, err = TabularQuery(results.Query)
-		results.Errors = append(results.Errors, err)
-		results.TabTrunc = len(results.Tabular) == ResultLimit
-		wg.Done()
-	}()
-
-	wg.Wait()
-	results.Duration = time.Now().Sub(start).Round(time.Microsecond)
+	tmplData.Duration = time.Now().Sub(start).Round(time.Microsecond)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	err = templates.ExecuteTemplate(w, "index.html", results)
+	err = tmpls[tmplData.TmplName].ExecuteTemplate(w, "index.html", tmplData)
 	if err != nil {
 		log.Printf("%+v\n", errors.Wrap(err, "templates.ExecuteTemplate"))
 	}
 }
 
-type Adapter func(http.Handler) http.Handler
+func Logger(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println(r.RemoteAddr, r.Method, r.URL.String())
 
-func Logger() Adapter {
-	return func(h http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Println(r.RemoteAddr, r.Method, r.URL.String())
+		h.ServeHTTP(w, r)
+	})
+}
 
-			h.ServeHTTP(w, r)
-		})
-	}
+func CacheControl(h http.Handler, val string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", val)
+
+		h.ServeHTTP(w, r)
+	})
 }
 
 var gzipWriterPool = sync.Pool{
@@ -283,6 +288,20 @@ func Gzip(next http.Handler) http.Handler {
 
 		next.ServeHTTP(&gzipResponseWriter{gzipWriter, w}, r)
 	})
+}
+
+func Source(src string) template.HTML {
+	switch src {
+	case "alpha":
+		return template.HTML("Alpha")
+	case "drug":
+		return template.HTML("Drug")
+	case "ext":
+		return template.HTML("External")
+	case "neo":
+		return template.HTML("Neoplasm")
+	}
+	return ""
 }
 
 func Badge(kind string) template.HTML {
@@ -357,13 +376,36 @@ func CodeTrimSuffix(code string) string {
 	return strings.TrimRight(code, ".-")
 }
 
-func ParseTemplates() (tmpl *template.Template, err error) {
-	tmpl = template.New("").Funcs(template.FuncMap{
+func ParseTemplates() (err error) {
+	tmpls = map[string]*template.Template{}
+
+	tmpl := template.New("").Funcs(template.FuncMap{
 		"badge":    Badge,
 		"label":    Label,
+		"source":   Source,
 		"codeTrim": CodeTrimSuffix,
 	})
-	return tmpl.ParseGlob("assets/*.html")
+
+	tmpl, err = tmpl.ParseFiles("tmpl/index.html")
+	if err != nil {
+		return errors.Wrap(err, "tmpl.ParseFiles")
+	}
+	tmpls["index"] = tmpl
+
+	for _, t := range []struct{ name, filename string }{
+		{"cm", "tmpl/cm.html"},
+	} {
+		tmpls[t.name], err = tmpl.Clone()
+		if err != nil {
+			return errors.Wrap(err, "indexTmpl.Clone")
+		}
+		tmpls[t.name], err = tmpls[t.name].ParseFiles(t.filename)
+		if err != nil {
+			return errors.Wrap(err, "tmpls[t.name].ParseFiles")
+		}
+	}
+
+	return nil
 }
 
 func init() {
@@ -382,7 +424,7 @@ func init() {
 
 	var err error
 
-	templates, err = ParseTemplates()
+	err = ParseTemplates()
 	if err != nil {
 		log.Fatalf("%+v\n", errors.Wrap(err, "ParseTemplates"))
 	}
@@ -407,8 +449,13 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", Logger()(Gzip(IndexHandler{})))
-	mux.Handle("/assets/", Gzip(http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))))
+	mux.Handle("/", Logger(Gzip(IndexHandler{})))
+	mux.Handle("/assets/", Gzip(
+		CacheControl(
+			http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))),
+			"public, max-age=31536000",
+		),
+	))
 
 	if production {
 		server.Addr = ":https"

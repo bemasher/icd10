@@ -108,7 +108,7 @@ const (
 	tabularIdxBkt = "tabular_index"
 )
 
-func ParseTabular(db *bolt.DB) (n int, err error) {
+func ParseTabular(db *bolt.DB) (n uint64, err error) {
 	xmlFile, err := os.Open("icd10cm_tabular_2019.xml")
 	if err != nil {
 		return 0, errors.Wrap(err, "os.Open")
@@ -142,7 +142,7 @@ func ParseTabular(db *bolt.DB) (n int, err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	idx := 0
+	idx := uint64(0)
 	for diag := range node.Walk(ctx) {
 		docId := make([]byte, 8)
 		docIdLen := binary.PutUvarint(docId, uint64(idx))
