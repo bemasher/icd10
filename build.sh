@@ -3,4 +3,4 @@
 COMMIT=`git rev-parse --short HEAD`
 GTag=""
 
-go build -v -ldflags "-X main.commit=${COMMIT} -X main.gtag=${GTag}"
+go install -v -ldflags "-X main.commit=${COMMIT} -X main.gtag=${GTag}"
